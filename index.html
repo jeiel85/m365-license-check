@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M365 라이선스 체크</title>
+<meta name="description" content="Microsoft 365를 구독 중인데 Word에 '정기 가입이 취소되었습니다'가 뜰 때, 원인을 진단하고 라이선스 캐시를 초기화하는 Windows용 한 줄 도구.">
+<meta property="og:title" content="M365 라이선스 체크">
+<meta property="og:description" content="'정기 가입이 취소되었습니다' — 구독은 살아 있는데 Office가 막힐 때 한 줄로 진단하고 고칩니다.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232456d6'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11.5' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --ink: #15181e;
+  --muted: #5b6372;
+  --line: #e2e5ea;
+  --accent: #2456d6;
+  --accent-ink: #ffffff;
+  --accent-soft: #e8eefc;
+  --code-bg: #0f1420;
+  --code-ink: #e6ebf5;
+  --warn: #b4372b;
+  --ok: #1d7a46;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116;
+    --surface: #161a21;
+    --ink: #e9ecf1;
+    --muted: #9aa3b2;
+    --line: #262c36;
+    --accent: #6d94ff;
+    --accent-ink: #0b1020;
+    --accent-soft: #1b2440;
+    --code-bg: #090c12;
+    --code-ink: #e6ebf5;
+    --warn: #ff8a7d;
+    --ok: #5fd394;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.65;
+  word-break: keep-all;
+}
+a { color: var(--accent); }
+.wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.01em; }
+.brand svg { flex: none; }
+.top a.gh { color: var(--muted); text-decoration: none; font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
+.top a.gh:hover { color: var(--ink); }
+
+.hero { padding: 40px 0 28px; }
+.symptom {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 14px 6px 8px; font-size: 14px; color: var(--muted);
+}
+.symptom .dot { width: 20px; height: 20px; border-radius: 50%; background: var(--warn); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.25; letter-spacing: -0.03em; margin: 18px 0 14px; }
+.lead { font-size: 18px; color: var(--muted); margin: 0; max-width: 640px; }
+
+.run {
+  margin: 34px 0 10px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 22px;
+}
+.run h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); font-weight: 600; }
+.cmd {
+  display: flex; align-items: stretch; gap: 0; background: var(--code-bg); border-radius: 10px; overflow: hidden;
+}
+.cmd code {
+  flex: 1; min-width: 0; color: var(--code-ink); padding: 14px 16px; font-size: 14px;
+  font-family: "Cascadia Code", Consolas, ui-monospace, monospace;
+  overflow-x: auto; white-space: nowrap;
+}
+.cmd button {
+  flex: none; border: 0; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 700;
+  padding: 0 20px; cursor: pointer; min-width: 92px;
+}
+.cmd button:hover { filter: brightness(1.08); }
+.cmd button.done { background: var(--ok); }
+.steps { list-style: none; padding: 0; margin: 18px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; counter-reset: s; }
+.steps li { counter-increment: s; background: var(--bg); border-radius: 10px; padding: 12px 14px; font-size: 14px; color: var(--muted); }
+.steps li::before { content: counter(s); display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 800; font-size: 12px; margin-right: 8px; }
+.steps b { color: var(--ink); }
+kbd { font-family: inherit; font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--surface); color: var(--ink); }
+.alt { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font-size: 14px; color: var(--muted); }
+.btn-ghost { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; text-decoration: none; color: var(--ink); font-weight: 600; background: var(--surface); }
+.btn-ghost:hover { border-color: var(--accent); }
+
+section { padding: 34px 0 8px; }
+section > h2 { font-size: 22px; letter-spacing: -0.02em; margin: 0 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
+.card h3 { margin: 0 0 6px; font-size: 16px; }
+.card p, .card ul { margin: 0; color: var(--muted); font-size: 15px; }
+.card ul { padding-left: 18px; }
+.tag { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 1px 8px; margin-bottom: 8px; }
+.tag.read { background: var(--accent-soft); color: var(--accent); }
+.tag.ask { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
+summary { cursor: pointer; font-weight: 600; }
+details p { margin: 10px 0 2px; color: var(--muted); font-size: 15px; }
+
+footer { padding: 40px 0 48px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); margin-top: 40px; }
+
+@media (max-width: 680px) {
+  .steps, .grid { grid-template-columns: 1fr; }
+  .cmd { flex-direction: column; }
+  .cmd button { padding: 12px; }
+  .hero { padding-top: 16px; }
+  .lead { font-size: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M9 16.5l4.5 4.5L23 11.5" stroke="var(--accent-ink)" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      M365 라이선스 체크
+    </div>
+    <a class="gh" href="https://github.com/jeiel85/m365-license-check">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      소스 보기
+    </a>
+  </header>
+
+  <main>
+    <div class="hero">
+      <span class="symptom"><span class="dot">!</span>"정기 가입이 취소되었습니다." — 그런데 구독은 살아 있다면</span>
+      <h1>구독 중인데 Word가 막힐 때,<br>한 줄로 진단하고 고칩니다.</h1>
+      <p class="lead">계정 페이지엔 Microsoft 365가 그대로 있는데 Office만 "취소됨"이라고 할 때, 대개 이 PC에 남은 라이선스 캐시가 낡은 것입니다. 상태를 확인하고, 원하면 캐시를 백업한 뒤 새로 받게 합니다.</p>
+    </div>
+
+    <div class="run" id="run">
+      <h2>PowerShell에 붙여넣어 실행</h2>
+      <div class="cmd">
+        <code id="oneliner">irm https://raw.githubusercontent.com/jeiel85/m365-license-check/main/m365-license-check.cmd | iex</code>
+        <button type="button" id="copy" aria-live="polite">복사</button>
+      </div>
+      <ol class="steps">
+        <li><b>복사</b> 버튼을 누릅니다</li>
+        <li><kbd>Win</kbd> + <kbd>X</kbd> → <b>터미널</b>을 엽니다</li>
+        <li>붙여넣고(<kbd>Ctrl</kbd>+<kbd>V</kbd>) <b>Enter</b></li>
+      </ol>
+      <div class="alt">
+        <span>명령어가 낯설다면</span>
+        <a class="btn-ghost" href="m365-license-check.cmd" download>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
+          파일로 받아 더블클릭
+        </a>
+        <span>관리자 권한은 필요 없습니다.</span>
+      </div>
+    </div>
+
+    <section>
+      <h2>무엇을 하나요</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="tag read">자동 · 읽기만</span>
+          <h3>진단</h3>
+          <ul>
+            <li>설치된 Office가 구독용인지</li>
+            <li>로그인된 계정이 여러 개인지</li>
+            <li>구독 라이선스 상태와 만료일<br>(Office에 들어 있는 Microsoft 도구 <code>vnextdiag</code> 사용)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag ask">물어본 뒤에만</span>
+          <h3>캐시 초기화</h3>
+          <ul>
+            <li>Office 앱을 닫고(강제 종료는 따로 확인)</li>
+            <li>라이선스 캐시를 백업한 뒤 지우고</li>
+            <li>Word를 열어 재로그인 → 자동으로 다시 진단</li>
+          </ul>
+        </div>
+      </div>
+      <p style="color:var(--muted);font-size:14px;margin:14px 0 0">로그인 정보는 지우지 않고, 어떤 데이터도 외부로 보내지 않습니다. 백업 위치와 되돌리는 방법을 화면에 알려 줍니다.</p>
+    </section>
+
+    <section>
+      <h2>자주 묻는 질문</h2>
+      <details>
+        <summary>OneDrive는 되는데 왜 Word만 막히나요?</summary>
+        <p>OneDrive는 구독이 없어도 무료 5GB로 동작합니다. OneDrive가 된다고 Office 라이선스가 정상이라는 뜻은 아닙니다. Office는 PC에 받아 둔 라이선스 파일을 따로 봅니다.</p>
+      </details>
+      <details>
+        <summary>회사 IT 관리자에게 요청해야 하나요?</summary>
+        <p>개인·Family 구독이라면 IT 관리자는 없습니다. 이 도구로 초기화하고 다시 로그인해도 "취소"로 나오면, Family 구독을 공유해 준 소유자가 account.microsoft.com/services 에서 정기 결제 해제·결제 실패·공유 목록 제외 여부를 확인해야 합니다. 회사·학교 계정(Microsoft 365 비즈니스)은 이 도구의 대상이 아니며 조직 관리자에게 문의하세요.</p>
+      </details>
+      <details>
+        <summary>초기화하면 문서나 설정이 사라지나요?</summary>
+        <p>아니요. 지우는 것은 라이선스 캐시(<code>%LOCALAPPDATA%\Microsoft\Office\Licenses</code>와 레지스트리 <code>HKCU\…\Office\16.0\Common\Licensing</code>)뿐이며, 지우기 전에 같은 위치에 백업합니다. 열려 있는 Office 앱은 먼저 정상 종료를 시도하고, 강제 종료는 따로 묻습니다.</p>
+      </details>
+      <details>
+        <summary>인터넷에서 받은 스크립트를 실행해도 되나요?</summary>
+        <p>실행 전에 <a href="https://github.com/jeiel85/m365-license-check/blob/main/m365-license-check.cmd">소스 전체</a>를 읽어 보시길 권합니다. 파일 하나뿐이고 누구나 내용을 확인할 수 있습니다. 내려받은 파일을 실행하면 Windows가 경고를 띄울 수 있는데, 서명되지 않은 스크립트라서 그렇습니다.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    MIT License · Microsoft와 관련 없는 비공식 도구입니다. Microsoft 365, Word, OneDrive는 Microsoft Corporation의 상표입니다.
+  </footer>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById('copy');
+  var text = document.getElementById('oneliner').textContent.trim();
+  function done(ok) {
+    btn.textContent = ok ? '복사됨 ✓' : '직접 복사';
+    btn.classList.toggle('done', ok);
+    setTimeout(function () { btn.textContent = '복사'; btn.classList.remove('done'); }, 2200);
+  }
+  btn.addEventListener('click', function () {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { fallback(); });
+    } else { fallback(); }
+  });
+  function fallback() {
+    var r = document.createRange();
+    r.selectNodeContents(document.getElementById('oneliner'));
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    done(ok);
+  }
+})();
+</script>
+</body>
+</html>

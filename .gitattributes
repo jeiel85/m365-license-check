@@ -1,0 +1,2 @@
+# Keep CRLF bytes exactly as committed so the downloaded .cmd runs in cmd.exe
+*.cmd -text
